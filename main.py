@@ -5,6 +5,7 @@ import os
 import glob
 from hdbscan import HDBSCAN
 import matplotlib.pyplot as plt
+from metric_learn import *
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import pandas as pd
@@ -31,7 +32,7 @@ def cart2spherical(cart):
     return np.vstack((r, theta, phi))
 
 
-def parse(truth, max_num=16):
+def parse(truth, min_num=5, max_num=16):
     truth_dedup = truth.drop_duplicates('particle_id')
     #truth_sort = truth_dedup.sort_values('weight', ascending=False)
 
@@ -45,8 +46,10 @@ def parse(truth, max_num=16):
             np.ones((p_traj.shape[0], 1), dtype=np.int) * i, columns=['id'])
         p_traj_id = pd.concat((p_traj, p_id), axis=1)
         p_traj_list.append(p_traj_id)
-        if p_traj.shape[0] < max_num:
+
+        if min_num < p_traj.shape[0] and p_traj.shape[0] < max_num:
             p_traj_clean_list.append(p_traj_id)
+
     p_traj_df = pd.concat(p_traj_list, ignore_index=True)
     p_traj_clean_df = pd.concat(p_traj_clean_list, ignore_index=True)
 
@@ -59,8 +62,10 @@ def parse(truth, max_num=16):
         rtp = cart2spherical(xyz).transpose()
         rtp_df = pd.DataFrame(rtp, columns=('r', 'theta', 'phi'))
         rtp_list.append(rtp_df)
-        if p_traj.shape[0] < max_num:
+
+        if min_num < p_traj.shape[0] and p_traj.shape[0] < max_num:
             rtp_clean_list.append(rtp_df)
+
     rtp_df = pd.concat(rtp_list, ignore_index=True)
     rtp_clean_df = pd.concat(rtp_clean_list, ignore_index=True)
 
@@ -91,20 +96,33 @@ def compute_x2(xyz, prefix='t'):
 
 p_traj_clean_all = []
 hits_all = []
+end_id = 0
 for i, (event_id, hits, cells, particles, truth) in tqdm.tqdm(
         enumerate(load_dataset('../input/train_1', skip=0))):
     _, p_traj_clean_df = parse(truth)
+    p_traj_clean_df['id'] += end_id
+    end_id = p_traj_clean_df['id'].values[-1]
     compute_x2(p_traj_clean_df)
     compute_x2(hits, prefix='')
     p_traj_clean_all.append(p_traj_clean_df)
+
+    xyz = hits.loc[:, ['x', 'y', 'z']].values.transpose()
+    rtp = cart2spherical(xyz).transpose()
+    rtp_df = pd.DataFrame(rtp, columns=('r', 'theta', 'phi'))
+    hits = pd.concat((hits, rtp_df), axis=1)
+
     hits_all.append(hits)
-    if i > 100:
+    if i > 10:
         break
 
 scl = preprocessing.StandardScaler()
-clf = LinearDiscriminantAnalysis(n_components=None)
-X_cols = ('x', 'y', 'z', 'x2', 'y2', 'z2')
-tX_cols = ('tx', 'ty', 'tz', 'tx2', 'ty2', 'tz2')
+# clf = LinearDiscriminantAnalysis(n_components=None)
+# clf = LFDA(k=8)
+clf = LMNN(k=1)
+X_cols = ('r', 'theta', 'phi', 'x', 'y', 'z', 'x2', 'y2', 'z2')
+tX_cols = ('r', 'theta', 'phi', 'tx', 'ty', 'tz', 'tx2', 'ty2', 'tz2')
+# X_cols = ('x2', 'y2', 'z2')
+# tX_cols = ('tx2', 'ty2', 'tz2')
 
 p_traj_clean_cat = pd.concat(p_traj_clean_all, ignore_index=True)
 hits_cat = pd.concat(hits_all, ignore_index=True)
@@ -118,6 +136,10 @@ score_best = 0
 
 for event_id, hits, cells, particles, truth in load_dataset(
         '../input/train_1', skip=0):
+    xyz = hits.loc[:, ['x', 'y', 'z']].values.transpose()
+    rtp = cart2spherical(xyz).transpose()
+    rtp_df = pd.DataFrame(rtp, columns=('r', 'theta', 'phi'))
+    hits = pd.concat((hits, rtp_df), axis=1)
     compute_x2(hits, prefix='')
 
     X_scale = scl.transform(hits.loc[:, X_cols].values)
