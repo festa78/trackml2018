@@ -112,13 +112,15 @@ for i, (event_id, hits, cells, particles, truth) in tqdm.tqdm(
     hits = pd.concat((hits, rtp_df), axis=1)
 
     hits_all.append(hits)
-    if i > 10:
+    if i > -1:
         break
 
 scl = preprocessing.StandardScaler()
 # clf = LinearDiscriminantAnalysis(n_components=None)
-# clf = LFDA(k=8)
-clf = LMNN(k=1)
+clf = LFDA(k=2)
+# clf = NCA()
+# clf = LMNN(k=2)
+# clf = RCA_Supervised()
 X_cols = ('r', 'theta', 'phi', 'x', 'y', 'z', 'x2', 'y2', 'z2')
 tX_cols = ('r', 'theta', 'phi', 'tx', 'ty', 'tz', 'tx2', 'ty2', 'tz2')
 # X_cols = ('x2', 'y2', 'z2')
@@ -145,10 +147,11 @@ for event_id, hits, cells, particles, truth in load_dataset(
     X_scale = scl.transform(hits.loc[:, X_cols].values)
     X_trans = clf.transform(X_scale)
     for eps in [
-            0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1
+            0.0001, 0.0003, 0.0005, 0.0008, 0.001, 0.003, 0.005, 0.007, 0.01, 0.03, 0.05, 0.07, 0.1, 0.3, 0.5, 0.7
     ]:
         db = DBSCAN(eps=eps, min_samples=1, algorithm='auto', n_jobs=-1)
-        out = db.fit(X_trans)
+        # out = db.fit(X_trans)
+        out = db.fit(X_scale)
 
         labels = out.labels_
         one_submission = create_one_event_submission(event_id, hits, labels)
